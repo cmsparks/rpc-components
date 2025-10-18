@@ -179,6 +179,16 @@ export function unmakeSerializable(input: any): React.ReactNode {
         }
         // plain object
         if (typeof value === 'object') {
+            // Check if this is a serialized client-side function
+            if (value.__reactSerializedHandler === true && 'clientBody' in value && 'deps' in value) {
+                // Reconstruct the function from the serialized string
+                const reconstructedFn = new Function("return " + value.clientBody) as Function
+                // Return a wrapper that injects deps as the first argument
+                return (...args: any[]) => {
+                    ;(reconstructedFn())(revive(value.deps), ...args)
+                }
+            }
+            
             const out: Record<string, unknown> = {}
             for (const [k, v] of Object.entries(value)) {
                 if (k === '__reactSerialized') continue

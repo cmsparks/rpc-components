@@ -168,7 +168,7 @@ function resolveRpcComponent(
 
 #### TODOs
  * Fragments are broken :sad: 
- * Client side updates (primarily loading states, so we're not waiting for a rerender)
+ * Client side updates (primarily loading states, so we're not waiting for a rerender). client() currently works, but doesn't work well. Dependencies don't seem to be working 100% right.
  * Reimplement deferFallback in RpcSuspense, but make it good
  * Implement as many hooks as possible and make sure they're the exact same functionality/type signatures as the client side hooks. Currently I just threw the react internals at claude and asked it to implement something similar 
  * Callbacks might be leaky memory wise. We very likely don't adequately clean up callbacks.

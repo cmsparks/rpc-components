@@ -1,5 +1,6 @@
-import { RpcComponent, RpcComponentServer } from "./rpc-components/server";
+import { client, RpcComponent, RpcComponentServer } from "./rpc-components/server";
 import { useEffect, useReducer, useState } from "./rpc-components/hooks";
+import type { MouseEventHandler } from "react";
 
 /**
  * Server side code for the counter
@@ -106,6 +107,18 @@ export class UIEntrypoint extends RpcComponentServer {
 
         return <div>
             <div>Clock: {count}</div>
+        </div>
+    }
+
+    @RpcComponent()
+    async CounterClientClick() {
+        const [count, setCount] = useState(0)
+
+        return <div>
+            <div>Count: {count}</div>
+            <button onClick={client((deps, baseArgs) => {
+                deps.setCount(count => count + 1)
+            }, { count, setCount })}>Increment</button>
         </div>
     }
 }

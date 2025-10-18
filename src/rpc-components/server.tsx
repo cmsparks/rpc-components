@@ -39,10 +39,10 @@ export class RpcComponentServer extends RpcTarget {
     private async pushRerender(id: string) {
         const component = this.components[id]
         if (!component) throw new Error("Tried to rerender component that doesn't exist")
-        
+
         // Reset hook index before re-rendering so hooks are read from the start
         component.currentHookIndex = 0
-        
+
         const componentFunction = this[component.component as keyof this] as Function
         try {
             const componentRes = await componentFunction.call(this, id, component.reresolve, ...component.args)
@@ -64,7 +64,7 @@ export function RpcComponent(): MethodDecorator {
             throw new Error("@RpcComponent can only be applied to methods")
         }
 
-        descriptor.value = async function(
+        descriptor.value = async function (
             id: string,
             reresolve: RpcStub<(serializableComponent: any) => void>,
             ...args: any[]
@@ -96,4 +96,19 @@ export function RpcComponent(): MethodDecorator {
 
         return descriptor;
     }
+}
+
+interface ClientSideFunction<T> {
+    __reactSerializedHandler: true,
+    clientBody: string,
+    deps: T
+}
+export function client<T, F extends (...args: any[]) => any>(fn: (deps: T, ...args: Parameters<F>) => ReturnType<F>, deps: T): F {
+    const clientFunction: ClientSideFunction<T> = {
+        __reactSerializedHandler: true,
+        clientBody: fn.toString(),
+        deps
+    }
+    // force cast so our types don't complain
+    return clientFunction as unknown as F
 }
