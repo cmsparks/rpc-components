@@ -1,10 +1,10 @@
 # RPC Components - Server side UI interactivity
 
+Demo: https://rpc-components.cmsparks.workers.dev/
+
 RPC Components are a new method of rendering UI components on the server. The key difference, is that these components are interactive and stateful.
 
-React Server Components let you run component logic on the server and avoid shipping JavaScript to the client. The tradeoff is complexity: you need a framework like Next.js, bundler configuration that understands server/client boundaries, and a build step that splits your code appropriately.
-
-RPC Components are a different implementation of the same idea. Instead of using a bundler to separate server and client code at build time, they use RPC at runtime. Your server components are React.FCs that happen to live on a server, complete with interactivity and statefulness. When a client needs to render a component, it calls that function over RPC. When an event handler fires, that's another RPC call. When state updates, the server re-renders and sends the new component tree back.
+RPC Components are a different implementation of a similar idea to RSC. However, instead of using a bundler to separate server and client code at build time, they use RPC at runtime. Your server components are React.FCs that happen to live on a server, with interactivity and state. When a client needs to render a component, it calls that function over RPC. When an event handler fires, that's another RPC call. When state updates, the server re-renders and sends the new component tree back.
 
 The implementation is straightforward. Capnweb serializes the components (it can transmit functions over the wire, which matters for event handlers and state updates). A special RpcSuspense boundary handles the async nature of remote calls (it functions like a normal Suspense + Lazy component under the hood). The server keeps track of rendered components and their associated resolver functions, so it can push updates when state changes. No bundler integration needed, no framework required (you can drop RPC components into an existing React app, even if it's a different framework!).
 
@@ -19,6 +19,7 @@ import { useState } from "rpc-components/hooks"
 
 class UI extends RpcComponents {
     // Stateful and interactive server rendered component!
+    @RpcComponent
     ServerComponent(props: { foo: string }) {
         // You can use hooks like useState on the server!
         const [state, setState] = useState(false)
@@ -51,42 +52,59 @@ function ClientComponent() {
 
 ## Internals
 
-Let's dive into the gritty details.
-
 ### RpcComponent
 
-RpcComponent acts as our Entrypoint for RPC components. It extends RpcTarget, and wraps every method on the class. To a user, calling methods on the class looks like a typical React.FC `function(props: { foo: string }) { return <div>hello {props.foo}</div> }`, but internally, we add two additional parameters to the front of the function: an id for the component, and a reresolver function. This is used to push state updates back to the client without any additional roundtrips!
+RpcComponent acts as our Entrypoint for RPC components. It extends RpcTarget, and stores state related to components being rendered. To a user, calling methods on the class looks like a typical React.FC, but internally we store some state related to hooks and component rendering. 
+
+For any method with the @RpcComponent method decorator, we add two additional parameters to the front of the function: an id for the component, and a reresolver function. This is used to push state updates back to the client without any additional roundtrips!
 
 ```tsx
-class RpcComponents extends RpcTarget {
-    // Record of all RPC components rendered by the session with their associated resolver function
-    componentReresolvers: Record<string, function(serializedComponent: object): void>
-    storage = new AsyncLocalStorage()
+
+export class RpcComponentServer extends RpcTarget {
+    components: Record<string, ComponentData> = {}
 
     constructor() {
-        // apply decorator to every method
-        Object.getOwnPropertyNames(this.prototype).map(([k, v]) => {
-            const ogFunction = this[k]
-            this[k] = function(id, reresolve, ...args) {
-                return this.storage.run(id, function() {
-                    // ...
+        super()
+    }
 
-                    // save the reresolver, so we can push component state updates back to the client
-                    componentReresolvers[id] = reresolve.dup()
+    useLifecycle() {
+        const store = this.getStore()
+        return {
+            update: () => this.pushRerender(store.id),
+        }
+    }
 
-                    // Importantly, this is distinct from serializing the component directly. 
-                    // We're not just JSON.stringify()-ing the component, we're instead 
-                    // strippping out unserializable properties. We also DON'T strip the function props,
-                    // because capnweb CAN transmit functions over the wire!
-                    return makeSerializable(ogFunction(...args).bind(this))
-                })
-            }
-        })
+    private getStore(): { this: RpcComponentServer, id: string } {
+        const store = asl.getStore()
+        if (!store) {
+            throw new Error("No ID found")
+        }
+        return store
+    }
+
+    // Imperatively push a rerender for a component
+    // You shouldn't use this. Instead use the included useState hook
+    private async pushRerender(id: string) {
+        const component = this.components[id]
+        if (!component) throw new Error("Tried to rerender component that doesn't exist")
+        
+        // Reset hook index before re-rendering so hooks are read from the start
+        component.currentHookIndex = 0
+        
+        const componentFunction = this[component.component as keyof this] as Function
+        try {
+            const componentRes = await componentFunction.call(this, id, component.reresolve, ...component.args)
+            await component.reresolve(componentRes)
+        } catch (e) {
+            console.error("Failed to rerender component", id, e)
+        }
     }
 }
 ```
 
 ### RpcSuspense
+
+RpcSuspense is a Suspense boundary that attempts to resolve RPC components in the background.
 
 ```tsx
 export function RpcSuspense(props: {
@@ -96,9 +114,9 @@ export function RpcSuspense(props: {
 }) {
     const resolvedChildren = Children.toArray(props.children).map(function(child, i) {
         if (isValidElement(child)) {
-            // if the child is an RPC component, let's attempt to resolve it in the background
-            if (child.type instanceof Function) {
-                return resolveRpcComponent(child.type, child.props)
+            // if the child is an RPC component, let's attempt to resolve it
+            if (child.type === 'function') {
+                // ...
             }
         }
     })
@@ -112,35 +130,29 @@ export function RpcSuspense(props: {
 
 ### Component resolution
 
+Resolve an RPC component via React.lazy() so it works with Suspense.
+
+React docs recommend not abusing lazy like this because lazy is intended to be used at the top level to lazy load imports, but it works fine for this use case. 
+
+From my (uninformed) reading of the react source code, server components just end up being wrapped by a lazy component anyways under the hood: https://github.com/facebook/react/blob/main/packages/react-server/src/ReactFlightServer.js#L1514
+
 ```tsx
+/**
+ * Resolve an RPC component
+ * @param entrypointFn React FC on RPC entrypoint
+ * @returns 
+ */
 function resolveRpcComponent(
-  // TODO: improve the typing here
-  entrypointFn: any,
-  boundProps?: Record<string, unknown>,
-  onResolved?: (component: React.FC) => void
+    // TODO: improve the typing here
+    entrypointFn: any,
+    boundProps?: Record<string, unknown>,
+    deferFallback?: boolean,
 ): React.FC {
     const id = useId()
     const componentRef = useRef<React.FC | null>(null)
-    const [, triggerResolve] = useReducer(x => x + 1, null)
 
-
-    return lazy(async function() {
-        const reresolve = (serializedComponent) => {
-            const tree = deserializeComponent(desc);
-            const Component: React.FC = () => <>{tree}</>;
-            componentRef.current = Component
-            triggerResolve()
-        }
-
-        const { propsNoFns, fnKeys, fnValues } = splitFunctionProps(boundProps ?? {})
-        // reresolve is a hook passed to the entrypointFn. 
-        // It lets our RPC component trigger state updates for ANY COMPONENT IN OUR RPC COMPONENT TREE!
-        const desc = await (entrypointFn as any)(id, reresolve, { ...propsNoFns, __fnKeys: fnKeys }, ...fnValues)
-        const tree = deserializeComponent(desc);
-        const Component: React.FC = () => <>{tree}</>;
-        return new Promise((resolve) => {
-            resolve({ default: Component });
-        })
+    return lazy(() => {
+        // ...
     })
 }
 ```
