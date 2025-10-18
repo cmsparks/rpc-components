@@ -1,10 +1,12 @@
 # RPC Components - Server side UI interactivity
 
+Demo: https://rpc-components.cmsparks.workers.dev/
+
 RPC Components are a new method of rendering UI components on the server. The key difference, is that these components are interactive and stateful.
 
 React Server Components let you run component logic on the server and avoid shipping JavaScript to the client. The tradeoff is complexity: you need a framework like Next.js, bundler configuration that understands server/client boundaries, and a build step that splits your code appropriately.
 
-RPC Components are a different implementation of the same idea. Instead of using a bundler to separate server and client code at build time, they use RPC at runtime. Your server components are React.FCs that happen to live on a server, complete with interactivity and statefulness. When a client needs to render a component, it calls that function over RPC. When an event handler fires, that's another RPC call. When state updates, the server re-renders and sends the new component tree back.
+RPC Components are a different implementation of the same idea. Instead of using a bundler to separate server and client code at build time, they use RPC at runtime. Your server components are React.FCs that happen to live on a server, with interactivity and state. When a client needs to render a component, it calls that function over RPC. When an event handler fires, that's another RPC call. When state updates, the server re-renders and sends the new component tree back.
 
 The implementation is straightforward. Capnweb serializes the components (it can transmit functions over the wire, which matters for event handlers and state updates). A special RpcSuspense boundary handles the async nature of remote calls (it functions like a normal Suspense + Lazy component under the hood). The server keeps track of rendered components and their associated resolver functions, so it can push updates when state changes. No bundler integration needed, no framework required (you can drop RPC components into an existing React app, even if it's a different framework!).
 
@@ -19,6 +21,7 @@ import { useState } from "rpc-components/hooks"
 
 class UI extends RpcComponents {
     // Stateful and interactive server rendered component!
+    @RpcComponent
     ServerComponent(props: { foo: string }) {
         // You can use hooks like useState on the server!
         const [state, setState] = useState(false)
@@ -51,8 +54,6 @@ function ClientComponent() {
 
 ## Internals
 
-Let's dive into the gritty details.
-
 ### RpcComponent
 
 RpcComponent acts as our Entrypoint for RPC components. It extends RpcTarget, and wraps every method on the class. To a user, calling methods on the class looks like a typical React.FC `function(props: { foo: string }) { return <div>hello {props.foo}</div> }`, but internally, we add two additional parameters to the front of the function: an id for the component, and a reresolver function. This is used to push state updates back to the client without any additional roundtrips!
@@ -64,24 +65,7 @@ class RpcComponents extends RpcTarget {
     storage = new AsyncLocalStorage()
 
     constructor() {
-        // apply decorator to every method
-        Object.getOwnPropertyNames(this.prototype).map(([k, v]) => {
-            const ogFunction = this[k]
-            this[k] = function(id, reresolve, ...args) {
-                return this.storage.run(id, function() {
-                    // ...
 
-                    // save the reresolver, so we can push component state updates back to the client
-                    componentReresolvers[id] = reresolve.dup()
-
-                    // Importantly, this is distinct from serializing the component directly. 
-                    // We're not just JSON.stringify()-ing the component, we're instead 
-                    // strippping out unserializable properties. We also DON'T strip the function props,
-                    // because capnweb CAN transmit functions over the wire!
-                    return makeSerializable(ogFunction(...args).bind(this))
-                })
-            }
-        })
     }
 }
 ```
