@@ -13,11 +13,16 @@ function App() {
 
                 {/* local header */}
                 <h1>List of items</h1>
-                
+                <RpcSuspense deferFallback fallback={<p>Loading clock...</p>}>
+                    <h1>Server Rendered Clock</h1>
+                    {/* @ts-ignore I have no idea why only the first rpc call shows a type error? */}
+                    <rpc.Clock />
+                </RpcSuspense>
+
+
                 {/* suspense boundary for our RPC components */}
                 <RpcSuspense deferFallback fallback={<p>Loading counter...</p>}>
                     <h1>Counter (defer fallback)</h1>
-                    {/* @ts-ignore I have no idea why only the first rpc call shows a type error? */}
                     <rpc.Counter />
                 </RpcSuspense>
 

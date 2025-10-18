@@ -1,5 +1,5 @@
 import { RpcComponent, RpcComponentServer } from "./rpc-components/server";
-import { useReducer, useState } from "./rpc-components/hooks";
+import { useEffect, useReducer, useState } from "./rpc-components/hooks";
 
 /**
  * Server side code for the counter
@@ -87,6 +87,25 @@ export class UIEntrypoint extends RpcComponentServer {
         return <div>
             <div>Count: {count}</div>
             <button onClick={() => setCount(count + 1)}>Increment</button>
+        </div>
+    }
+
+    @RpcComponent()
+    async Clock() {
+        const [count, setCount] = useState(0)
+
+        useEffect(() => {
+            const interval = setInterval(() => {
+                console.log("clocked!")
+                setCount(c => c + 1)  // Use functional form to get latest count
+            }, 1000)
+            return () => clearInterval(interval)
+        }, [])
+
+        console.log("rerendering!", count)
+
+        return <div>
+            <div>Clock: {count}</div>
         </div>
     }
 }

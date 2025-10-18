@@ -1,7 +1,7 @@
 import { RpcStub, RpcTarget } from "capnweb"
 import { AsyncLocalStorage } from "node:async_hooks"
 import { makeSerializable, unmakeSerializable } from "./serialize"
-import type { Hook } from "./hooks"
+import type { AnyHook } from "./hooks"
 
 export const asl = new AsyncLocalStorage<{ this: RpcComponentServer, id: string }>()
 type ComponentData = {
@@ -9,7 +9,7 @@ type ComponentData = {
     args: any[],
     reresolve: RpcStub<(serializableComponent: any) => void>,
     currentHookIndex: number,
-    hooks: Array<Hook<any, any>>
+    hooks: Array<AnyHook>
 }
 
 export class RpcComponentServer extends RpcTarget {
