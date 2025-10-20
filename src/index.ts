@@ -1,5 +1,5 @@
 import { newWorkersRpcResponse } from "capnweb";
-import { UIEntrypoint } from "./counter";
+import { UIEntrypoint } from "./ui-server";
 
 export default {
   async fetch(req: Request, env: Env, ctx: ExecutionContext): Promise<Response> {

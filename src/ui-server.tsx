@@ -1,6 +1,6 @@
 import { client, RpcComponent, RpcComponentServer } from "./rpc-components/server";
-import { useEffect, useReducer, useState } from "./rpc-components/hooks";
-import type { MouseEventHandler } from "react";
+import { useEffect, useReducer, useState, useMemo } from "./rpc-components/hooks";
+import type { RpcStub } from "cloudflare:workers";
 
 /**
  * Server side code for the counter
@@ -85,9 +85,28 @@ export class UIEntrypoint extends RpcComponentServer {
     async Counter() {
         const [count, setCount] = useState(0)
 
-        return <div>
-            <div>Count: {count}</div>
-            <button onClick={() => setCount(count + 1)}>Increment</button>
+        return <div className="counter-widget">
+            <div className="counter-display">{count}</div>
+            <button onClick={() => {
+                setCount(count + 1)
+            }}>+</button>
+        </div>
+    }
+
+    @RpcComponent()
+    async CounterServerLoading() {
+        const [loading, setLoading] = useState(false)
+        const [count, setCount] = useState(0)
+
+        return <div className="counter-widget">
+            <div className="counter-display">{loading ? "..." : count}</div>
+            <button onClick={() => {
+                setLoading(true)
+                setTimeout(() => {
+                    setCount(count + 1)
+                    setLoading(false)
+                }, 100)
+            }}>+</button>
         </div>
     }
 
@@ -105,8 +124,9 @@ export class UIEntrypoint extends RpcComponentServer {
 
         console.log("rerendering!", count)
 
-        return <div>
-            <div>Clock: {count}</div>
+        return <div className="counter-widget">
+            <div className="counter-display">{count}s</div>
+            <button onClick={() => setCount(0)}>Reset</button>
         </div>
     }
 
@@ -114,11 +134,11 @@ export class UIEntrypoint extends RpcComponentServer {
     async CounterClientClick() {
         const [count, setCount] = useState(0)
 
-        return <div>
-            <div>Count: {count}</div>
-            <button onClick={client((deps, baseArgs) => {
-                deps.setCount(count => count + 1)
-            }, { count, setCount })}>Increment</button>
+        return <div className="counter-widget">
+            <div className="counter-display">{count}</div>
+            <button onClick={client(async (clientDeps: { clientValue: number }, serverDeps, baseArgs) => {
+                serverDeps.setCount(count => count + clientDeps.clientValue)
+            }, { setCount })}>+</button>
         </div>
     }
 }

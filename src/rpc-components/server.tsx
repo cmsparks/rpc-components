@@ -12,6 +12,9 @@ type ComponentData = {
     hooks: Array<AnyHook>
 }
 
+/**
+ * Class which exposes server components
+ */
 export class RpcComponentServer extends RpcTarget {
     components: Record<string, ComponentData> = {}
 
@@ -53,6 +56,10 @@ export class RpcComponentServer extends RpcTarget {
     }
 }
 
+/**
+ * Decorator which marks a method as an RPC component. 
+ * The method being decorated should return valid React nodes.
+ */
 export function RpcComponent(): MethodDecorator {
     return function (
         target: Object,
@@ -103,11 +110,31 @@ interface ClientSideFunction<T> {
     clientBody: string,
     deps: T
 }
-export function client<T, F extends (...args: any[]) => any>(fn: (deps: T, ...args: Parameters<F>) => ReturnType<F>, deps: T): F {
+
+/**
+ * Run a function on the client from a server component.
+ * 
+ * This is useful for running functions that require client-side code, such as DOM manipulation,
+ * event handling, utilizing client side data, etc. The function will be serialized and sent to
+ * the client, where it will be executed in a Function(). 
+ * 
+ * IMPORTANT: This function has NO access to external state by default, and is only able to access 
+ * the arguments passed to it via the server (serverDeps) OR client (ctx).
+ * 
+ * The client function will be called with the following arguments:
+ * 
+ * @param fn The client side context object
+ *          (ctx: C, deps: T, ...args: Parameters<F>) => ReturnType<F>
+ *          ctx: The client side context object, set on the RpcSuspense component
+ *          deps: Server side dependencies, which were passed in below
+ *          ...args: The arguments passed to the client function (i.e. MouseEvent if it's an onClick handler)
+ * @param deps Server side dependencies to use when calling the function
+ */
+export function client<C, T, F extends (...args: any[]) => any>(fn: (ctx: C, serverDeps: T, ...args: Parameters<F>) => ReturnType<F>, serverDeps: T): F {
     const clientFunction: ClientSideFunction<T> = {
         __reactSerializedHandler: true,
         clientBody: fn.toString(),
-        deps
+        deps: serverDeps
     }
     // force cast so our types don't complain
     return clientFunction as unknown as F

@@ -162,13 +162,22 @@ function resolveRpcComponent(
 
 ### Serialization
 
-1. `makeSerializable(...)`: Capnweb handles serialization, but it can't serialize *everything*. We need to strip out unserializable properties (primarily `$$typeof`: Symbol('react....') attribute).
-2. `unmakeSerializable(...)`: After Capnweb deserializes the component, we need to restore the items to their proper types. This primarily involves
+Capnweb handles serialization, but it can't serialize *everything*. We need to:
+* Strip out unserializable properties (`$$typeof`: Symbol('react....') attributes, DOM nodes, etc...)
+* Turn Components into DOM nodes (which will later be reconstructed on the client using React.createElement)
+* Handle certain special function types like client side callbacks and remote callbacks which are RPC stubs
 
+We do this via `makeSerializable` and `unmakeSerializable`. `makeSerializable` is called on any inputs to RPC calls (both on the server and on the client) and `unmakeSerializable` is called on receipt of any RPC calls. `unmakeSerializable` also reconstructs components using React.createElement().
 
 #### TODOs
- * Fragments are broken :sad: 
- * Client side updates (primarily loading states, so we're not waiting for a rerender). client() currently works, but doesn't work well. Dependencies don't seem to be working 100% right.
- * Reimplement deferFallback in RpcSuspense, but make it good
- * Implement as many hooks as possible and make sure they're the exact same functionality/type signatures as the client side hooks. Currently I just threw the react internals at claude and asked it to implement something similar 
- * Callbacks might be leaky memory wise. We very likely don't adequately clean up callbacks.
+ * Fragments wrapping RPC components are broken :sad: 
+ * Ergonomic client side updates. Is a ctx prop on RpcSuspense the right pattern? Maybe a custom context provider?
+ * Improve deferFallback in RpcSuspense. Currently pretty messy code (but it works!)
+ * Implement as many hooks as possible and make sure they're the exact same functionality/type signatures as the client side hooks. The current state is that I threw the react internals at claude and asked it to implement something similar.
+ * Callbacks might be leaky memory wise. We very likely don't adequately clean up callbacks after .dup()-ing them.
+ * Types... rpc.\[Component\] types are pretty wonky. I get infinite recursion typecheck errors, lack of prop inference, etc.
+ * Synced state? Maybe a minimal store library? Is that necessary?
+ * Linters?
+    * Prevent users from using variables from outer-scopes in client()
+    * Other warnings?
+ * Composability

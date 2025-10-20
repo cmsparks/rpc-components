@@ -22,6 +22,7 @@ function resolveRpcComponent(
     entrypointFn: any,
     boundProps?: Record<string, unknown>,
     deferFallback?: boolean,
+    ctx?: Record<string, unknown>,
 ): React.FC {
     const id = useId()
     const componentRef = useRef<React.FC | null>(null)
@@ -43,8 +44,7 @@ function resolveRpcComponent(
     // reresolve is a hook passed to the entrypointFn. 
     // It lets our RPC component trigger state updates for ANY COMPONENT IN OUR RPC COMPONENT TREE!
     const reresolve = (serializedComponent: any) => {
-        console.log("reresolving", serializedComponent)
-        const tree = unmakeSerializable(serializedComponent);
+        const tree = unmakeSerializable(serializedComponent, ctx);
         const Component: React.FC = () => <>{tree}</>;
         componentRef.current = Component
         triggerResolve("ref")
@@ -56,7 +56,7 @@ function resolveRpcComponent(
         if (!fetchStartedRef.current && resolveMode.mode === "refetch") {
             fetchStartedRef.current = true
             entrypointFn(id, reresolve, boundProps ?? {}).then((desc: any) => {
-                const tree = unmakeSerializable(desc);
+                const tree = unmakeSerializable(desc, ctx);
                 const Component: React.FC = () => <>{tree}</>;
                 componentRef.current = Component
                 fetchStartedRef.current = false
@@ -71,7 +71,7 @@ function resolveRpcComponent(
         // Async resolution for normal paths
         if (resolveMode.mode === "refetch") {
             return entrypointFn(id, reresolve, boundProps ?? {}).then((desc: any) => {
-                const tree = unmakeSerializable(desc);
+                const tree = unmakeSerializable(desc, ctx);
                 const Component: React.FC = () => <>{tree}</>;
                 componentRef.current = Component
                 return { default: componentRef.current }
@@ -90,13 +90,15 @@ function resolveRpcComponent(
  * Suspense boundary for RPC components
  * @param props.fallback Fallback to display while RPC components are loading
  * @param props.deferFallback If true, return the cached component immediately while resolving in the background
+ * @param props.ctx Context to pass to RPC client calls
  * @param props.children Children to render
  * @returns 
  */
 export function RpcSuspense(props: {
     fallback: React.ReactNode,
-    // TODO: implement
     deferFallback?: boolean,
+    // TODO: rename to something that doesn't conflict with Context
+    ctx?: Record<string, unknown>,
     children: React.ReactNode
 }) {
     // Resolve RPC children
@@ -112,7 +114,7 @@ export function RpcSuspense(props: {
                 const serializableProps = makeSerializable(rawChildProps)
 
                 // Pass deferFallback to resolveRpcComponent
-                const LazyComp = resolveRpcComponent(t as any, serializableProps, props.deferFallback)
+                const LazyComp = resolveRpcComponent(t as any, serializableProps, props.deferFallback, props.ctx)
                 const node = <LazyComp key={key} />
                 return node
             }

@@ -16,7 +16,13 @@ export interface EffectHook {
     hasRun: boolean
 }
 
-export type AnyHook = Hook<any, any> | EffectHook
+export interface MemoHook<T> {
+    type: 'memo'
+    memoizedValue: T
+    deps: any[] | undefined
+}
+
+export type AnyHook = Hook<any, any> | EffectHook | MemoHook<any>
 
 export const useReducer = <S, A extends AnyActionArg>(
     ...args: Parameters<typeof reactUseReducer<S, A>>
@@ -205,4 +211,49 @@ function queueEffect(componentServer: any, componentId: string, hookIndex: numbe
             console.error("Effect error:", e)
         }
     })
+}
+
+export function useMemo<T>(factory: () => T, deps: any[]): T {
+    const store = asl.getStore()
+    if (!store) {
+        throw new Error("No ID found. Was the hook run inside of a server component?")
+    }
+
+    const { id, this: componentServer } = store
+    const component = componentServer.components[id]
+
+    // Initialize hooks array if it doesn't exist
+    if (!component.hooks) {
+        component.hooks = []
+        component.currentHookIndex = 0
+    }
+
+    // Get current hook index and increment for next hook call
+    const hookIndex = component.currentHookIndex!
+    component.currentHookIndex!++
+
+    // Get or create the hook at this index
+    let hook: MemoHook<T> | undefined = component.hooks[hookIndex] as unknown as MemoHook<T> | undefined
+
+    if (!hook) {
+        // Mount phase: compute the initial value
+        const memoizedValue = factory()
+        hook = {
+            type: 'memo',
+            memoizedValue,
+            deps
+        }
+        component.hooks[hookIndex] = hook
+    } else {
+        // Update phase: check if deps changed
+        const depsChanged = !areDepsEqual(hook.deps, deps)
+
+        if (depsChanged) {
+            // Recompute the memoized value
+            hook.memoizedValue = factory()
+            hook.deps = deps
+        }
+    }
+
+    return hook.memoizedValue
 }

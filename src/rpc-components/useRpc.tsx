@@ -1,5 +1,5 @@
 import { newWebSocketRpcSession, RpcStub, type RpcTarget } from "capnweb"
-import { Children, createContext, isValidElement, lazy, Suspense, useContext, useRef } from "react"
+import { Children, createContext, isValidElement, lazy, Suspense, useContext, useMemo, useRef } from "react"
 import React from "react"
 
 export type RetrySettings = boolean | number
@@ -29,7 +29,7 @@ export type RpcOptions<T extends RpcTarget> = {
     /**
      * Called when the RPC reconnection fails (after max retries)
      */
-    onRpcFailed: () => void
+    onRpcFailed: () => void,
 }
 
 // This is a function (as opposed to a const) so we get valid type checking with the generic argument
@@ -37,27 +37,51 @@ function DEFAULT_OPTS<T extends RpcTarget>(): RpcOptions<T> {
     return {
         retry: 3,
         retryDelay: 500,
-        onRpcBroken: () => {},
-        onRpcFailed: () => {},
-        onStart: (entrypoint: RpcStub<T>) => {},
-        onConnect: (entrypoint: RpcStub<T>) => {},
+        onRpcBroken: () => { },
+        onRpcFailed: () => { },
+        onStart: (entrypoint: RpcStub<T>) => { },
+        onConnect: (entrypoint: RpcStub<T>) => { },
     }
 }
 
 /**
- * Connect to a capnrpc endpoint and return the RPC stub
+ * Connect to a capnrpc endpoint and return the RPC stub and WebSocket
  * 
  * @param url Websocket RPC entrypoint URL
  * @param initOptions Entrypoint options for retries & lifecycle hooks
- * @returns RPC stub
+ * @returns Object containing rpc stub and WebSocket instance
  */
-function useRpc<T extends RpcTarget>(url: string, initOptions?: Partial<RpcOptions<T>>): RpcStub<T> {
+export function useRpc<T extends RpcTarget>(url: string, initOptions?: Partial<RpcOptions<T>>): { rpc: RpcStub<T>, ws: WebSocket } {
     const options: Required<RpcOptions<T>> = {
         ...DEFAULT_OPTS<T>(),
-        ...initOptions
+        ...initOptions,
     }
 
-    const stubRef = useRef<RpcStub<T>>(newWebSocketRpcSession<T>(url));
+    // Convert URL to WebSocket scheme
+    const wsUrl = useMemo(() => {
+        let convertedUrl = url;
+        
+        // If relative path, construct full URL with proper WebSocket scheme
+        if (url.startsWith('/')) {
+            const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+            convertedUrl = `${protocol}//${window.location.host}${url}`;
+        } 
+        // If absolute URL with http/https, convert to ws/wss
+        else if (url.startsWith('http://')) {
+            convertedUrl = url.replace('http://', 'ws://');
+        } else if (url.startsWith('https://')) {
+            convertedUrl = url.replace('https://', 'wss://');
+        }
+        
+        return convertedUrl;
+    }, [url]);
+
+    const ws = useMemo(() => {
+        const ws = new WebSocket(wsUrl)
+        return ws
+    }, [wsUrl])
+
+    const stubRef = useRef<RpcStub<T>>(newWebSocketRpcSession<T>(ws));
     const retriesRef = useRef<number>(0);
 
     (async () => {
@@ -80,14 +104,14 @@ function useRpc<T extends RpcTarget>(url: string, initOptions?: Partial<RpcOptio
                 retries--
             }
             setTimeout(async () => {
-                stubRef.current = newWebSocketRpcSession<T>(url)
+                stubRef.current = newWebSocketRpcSession<T>(wsUrl)
                 await options.onConnect(stubRef.current)
             }, delay)
         }
         options.onRpcFailed()
     })
 
-    return stubRef.current
+    return { rpc: stubRef.current, ws }
 }
 
 // @ts-ignore

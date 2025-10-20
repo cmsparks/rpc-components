@@ -1,7 +1,8 @@
 import React from "react"
 
 /**
- * This is a little vibe-smelly, but it works. Should replace with a better internal serialization mechanism
+ * This is a little vibe-smelly, but it works. Should replace with a better 
+ * internal serialization mechanism
  * 
  * It might be preferable to use whatever format React Server Components 
  * uses under the hood for serializing components. But we want to take 
@@ -148,7 +149,7 @@ export function makeSerializable(element: any, onRpcCallback?: () => void): any 
  * Reverse of makeSerializable: takes the output (or its JSON string) and
  * reconstructs React elements using React.createElement(...).
  */
-export function unmakeSerializable(input: any): React.ReactNode {
+export function unmakeSerializable(input: any, ctx?: Record<string, unknown>): React.ReactNode {
     const desc = input
 
     function revive(value: any): any {
@@ -183,9 +184,12 @@ export function unmakeSerializable(input: any): React.ReactNode {
             if (value.__reactSerializedHandler === true && 'clientBody' in value && 'deps' in value) {
                 // Reconstruct the function from the serialized string
                 const reconstructedFn = new Function("return " + value.clientBody) as Function
+                // Revive and dup() deps ONCE when creating the function, not on every invocation
+                // This ensures RPC stubs in deps get their own reference and won't be disposed
+                const revivedDeps = revive(value.deps)
                 // Return a wrapper that injects deps as the first argument
                 return (...args: any[]) => {
-                    ;(reconstructedFn())(revive(value.deps), ...args)
+                    ;(reconstructedFn())(ctx, revivedDeps, ...args)
                 }
             }
             
